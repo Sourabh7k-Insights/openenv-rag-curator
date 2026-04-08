@@ -250,9 +250,9 @@ def run_episode(client: OpenAI, env: RAGCuratorClient, task_id: str) -> float:
             except Exception as exc:
                 error_msg = str(exc)
                 print(f"[DEBUG] env.step error: {exc}", flush=True)
-                result = {"done": True, "reward": 0.0, "observation": {}}
+                result = {"done": True, "reward": 0.01, "observation": {}}
 
-            reward      = float(result.get("reward", 0.0))
+            reward      = float(result.get("reward", 0.01))
             done        = result.get("done", False)
             last_reward = reward
             rewards.append(reward)
@@ -266,11 +266,12 @@ def run_episode(client: OpenAI, env: RAGCuratorClient, task_id: str) -> float:
                 break
 
         if not rewards:
-            score = 0.0
+            score = 0.01  # Minimum valid score (strictly between 0 and 1)
         elif score == 0.0:
             score = rewards[-1]
 
-        score   = min(max(score, 0.0), 1.0)
+        # Clamp score to be strictly between 0 and 1 (not 0.0, not 1.0)
+        score = max(0.01, min(score, 0.99))
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     finally:
