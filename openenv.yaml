@@ -1,0 +1,74 @@
+name: "rag-db-curator"
+version: "0.1.0"
+description: >
+  An AI Data Engineer training environment. The agent must clean a polluted
+  RAG interview Q&A knowledge base by tagging questions, filling missing answers,
+  and merging semantic duplicates — all via a structured action API.
+
+repository: "https://huggingface.co/spaces/S777k/openenv-rag-curator"
+
+tags:
+  - data-engineering
+  - rag
+  - knowledge-base
+  - nlp
+
+observation:
+  type: object
+  fields:
+    current_task_id: string
+    current_task_description: string
+    database_metrics:
+      total_docs: integer
+      untagged_docs: integer
+      missing_answers: integer
+    search_results: "list[DocumentPreview]"
+    feedback: string
+    step_count: integer
+
+action:
+  type: object
+  fields:
+    action_type:
+      type: enum
+      values: [SEARCH_DB, TAG_QUESTION, UPDATE_ANSWER, MERGE_DUPLICATE, SUBMIT_TASK]
+    query: "string (optional) — keyword for SEARCH_DB"
+    doc_id: "string (optional) — target document ID"
+    tag: "string (optional) — one of: python, aws, react, sql"
+    answer_text: "string (optional) — answer text for UPDATE_ANSWER"
+    duplicate_doc_id: "string (optional) — ID to delete in MERGE_DUPLICATE"
+
+tasks:
+  - id: "task_0"
+    name: "Tag Untagged Questions"
+    description: >
+      10 questions have empty tags. Apply the correct topic tag (python / aws /
+      react / sql) to each. Score = fraction of questions correctly tagged (0.0–1.0).
+    difficulty: "easy"
+    max_steps: 20
+    success_threshold: 0.8
+
+  - id: "task_1"
+    name: "Fill Missing Answers"
+    description: >
+      3 questions have an empty ideal_answer field. Identify them and write a
+      factually correct answer (>10 chars) for each. Score = fraction filled.
+    difficulty: "medium"
+    max_steps: 20
+    success_threshold: 0.67
+
+  - id: "task_2"
+    name: "Semantic Deduplication"
+    description: >
+      The DB contains 2 pairs of near-duplicate questions imported from different
+      sources. Use SEARCH_DB to find them, then MERGE_DUPLICATE to remove the
+      redundant copy without deleting unique content.
+    difficulty: "hard"
+    max_steps: 20
+    success_threshold: 0.5
+
+endpoints:
+  reset:  "POST /reset/{task_id}"
+  step:   "POST /step/{task_id}"
+  state:  "GET  /state/{task_id}"
+  health: "GET  /health"
