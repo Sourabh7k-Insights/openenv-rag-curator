@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 # HF Spaces runs as non-root user 1000
+# Updated: 2026-04-08 - Force rebuild for grader score clamping fix
 RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
