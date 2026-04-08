@@ -33,6 +33,7 @@ def health():
 
 # ── OpenEnv core endpoints ─────────────────────────────────────────────────────
 
+@app.post("/reset", response_model=StepResult)
 @app.post("/reset/{task_id}", response_model=StepResult)
 def reset(task_id: str = "task_0"):
     """Start a fresh episode. Creates or replaces the env for this task_id."""
