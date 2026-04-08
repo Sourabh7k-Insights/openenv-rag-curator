@@ -1,7 +1,8 @@
 """
 graders.py — Deterministic task graders for the RAG Curator environment.
 
-All graders return (score: float, message: str) where score is in [0.0, 1.0].
+All graders return (score: float, message: str) where score is strictly in (0.0, 1.0).
+Scores are clamped to [0.01, 0.99] to meet hackathon requirements.
 """
 from database import CORRECT_TAGS, CORRECT_ANSWERS, DUPLICATE_PAIRS
 
@@ -11,12 +12,21 @@ JUNK_DOC_IDS = {"doc_025", "doc_026", "doc_027"}
 # Broken schema doc IDs — source_c rows where question/answer fields are swapped
 BROKEN_SCHEMA_IDS = {"doc_019"}
 
+# Minimum and maximum scores (strictly between 0 and 1)
+MIN_SCORE = 0.01
+MAX_SCORE = 0.99
+
+
+def clamp_score(score: float) -> float:
+    """Clamp score to be strictly between 0 and 1."""
+    return max(MIN_SCORE, min(score, MAX_SCORE))
+
 
 def grade_task_0(db: dict) -> tuple[float, str]:
     """
     Easy: Fix wrong/missing tags on 12 documents.
     Also awards bonus points for deleting junk/broken-schema rows.
-    Score = (correctly_tagged + junk_removed_bonus) normalised to [0, 1].
+    Score = (correctly_tagged + junk_removed_bonus) normalised to (0, 1).
     """
     tag_correct = 0
     tag_total = len(CORRECT_TAGS)
@@ -33,7 +43,9 @@ def grade_task_0(db: dict) -> tuple[float, str]:
     junk_bonus = round(junk_removed / len(JUNK_DOC_IDS) * 0.2, 2)
 
     base_score = round(tag_correct / tag_total, 2)
-    score = min(round(base_score + junk_bonus, 2), 1.0)
+    raw_score = round(base_score + junk_bonus, 2)
+    score = clamp_score(raw_score)
+    
     message = (
         f"{tag_correct}/{tag_total} docs correctly tagged. "
         f"Junk removed: {junk_removed}/{len(JUNK_DOC_IDS)}."
@@ -60,7 +72,8 @@ def grade_task_1(db: dict) -> tuple[float, str]:
     # Penalty: broken schema row still present
     broken_penalty = 0.1 if "doc_019" in db else 0.0
 
-    score = max(round(filled / total - broken_penalty, 2), 0.0)
+    raw_score = max(round(filled / total - broken_penalty, 2), 0.0)
+    score = clamp_score(raw_score)
     message = (
         f"{filled}/{total} missing answers filled. "
         f"Broken schema penalty: {broken_penalty}."
@@ -88,6 +101,7 @@ def grade_task_2(db: dict) -> tuple[float, str]:
             resolved += 0.5       # partial — both gone
         # else both exist → 0
 
-    score = round(resolved / total, 2)
+    raw_score = round(resolved / total, 2)
+    score = clamp_score(raw_score)
     message = f"{resolved}/{total} duplicate pairs resolved."
     return score, message
