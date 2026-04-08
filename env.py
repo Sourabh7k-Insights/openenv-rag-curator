@@ -111,7 +111,7 @@ class RAGCuratorEnv:
         self.last_feedback = "Database reset. Start working on your task."
         return StepResult(
             observation=self._build_observation(),
-            reward=0.0,
+            reward=0.5,  # Neutral reward (strictly between 0 and 1)
             done=False,
         )
 
@@ -138,7 +138,7 @@ class RAGCuratorEnv:
 
     def step(self, action: Action) -> StepResult:
         self.step_count += 1
-        reward = 0.0
+        reward = 0.5  # Default neutral reward (strictly between 0 and 1)
         done = False
 
         # Track progress before action
@@ -177,7 +177,7 @@ class RAGCuratorEnv:
 
             self.last_search_results = results
             self.last_feedback = f"Search returned {len(results)} results."
-            reward = 0.0  # Search is free, no reward/penalty
+            reward = 0.5  # Search is neutral (strictly between 0 and 1)
 
         # ── TAG_QUESTION ──
         elif action.action_type == "TAG_QUESTION":
@@ -249,7 +249,9 @@ class RAGCuratorEnv:
         # Compute progress-based reward (delta from before action)
         if not done and action.action_type != "SEARCH_DB":
             progress_after = self._compute_progress_reward()
-            reward = progress_after - progress_before  # Reward = improvement
+            delta = progress_after - progress_before  # Reward = improvement
+            # Map delta to (0, 1) range: 0.5 = no change, >0.5 = improvement, <0.5 = regression
+            reward = max(0.01, min(0.5 + delta, 0.99))
 
         # Step limit — auto-submit so agent always gets a graded score
         if self.step_count >= self.max_steps and not done:
