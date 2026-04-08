@@ -1,3 +1,17 @@
+---
+title: RAG DB Curator OpenEnv
+emoji: 🗄️
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+tags:
+  - openenv
+  - rag
+  - data-engineering
+  - reinforcement-learning
+---
+
 # OpenEnv: RAG DB Curator
 
 [![HuggingFace Space](https://img.shields.io/badge/🤗%20HuggingFace-Space-blue)](https://huggingface.co/spaces/S777k/openenv-rag-curator)
