@@ -3,10 +3,17 @@ inference.py — Baseline inference script for RAG DB Curator OpenEnv
 
 Follows the strict [START] / [STEP] / [END] log format required by the hackathon.
 
-Usage:
+Usage with HuggingFace Inference API:
+    export HF_TOKEN="hf_..."
+    export MODEL_NAME="meta-llama/Llama-3.2-3B-Instruct"
+    export ENV_BASE_URL="https://s777k-openenv-rag-curator.hf.space"
+    python inference.py
+
+Usage with OpenAI API:
     export API_BASE_URL="https://api.openai.com/v1"
     export MODEL_NAME="gpt-4o-mini"
-    export HF_TOKEN="hf_..."
+    export OPENAI_API_KEY="sk-..."
+    export ENV_BASE_URL="https://s777k-openenv-rag-curator.hf.space"
     python inference.py
 """
 import json
@@ -18,9 +25,24 @@ import httpx
 from openai import OpenAI
 
 # ── Configuration (from environment variables) ─────────────────────────────────
-API_BASE_URL: str = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME: str   = os.environ.get("MODEL_NAME",   "gpt-4o-mini")
-API_KEY: str      = os.environ.get("HF_TOKEN",     "dummy-key")
+API_BASE_URL: str = os.environ.get("API_BASE_URL", "")
+MODEL_NAME: str   = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.2-3B-Instruct")
+HF_TOKEN: str     = os.environ.get("HF_TOKEN", "")
+OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
+
+# Determine which API to use
+USE_HF_INFERENCE = not API_BASE_URL and HF_TOKEN
+API_KEY: str = HF_TOKEN if USE_HF_INFERENCE else OPENAI_API_KEY
+
+if USE_HF_INFERENCE:
+    API_BASE_URL = "https://api-inference.huggingface.co/models"
+    print(f"[INFO] Using HuggingFace Inference API with model: {MODEL_NAME}", flush=True)
+    print(f"[INFO] Note: Trying new router endpoint if old API fails", flush=True)
+elif not API_BASE_URL:
+    API_BASE_URL = "https://api.openai.com/v1"
+    print(f"[INFO] Using OpenAI API with model: {MODEL_NAME}", flush=True)
+else:
+    print(f"[INFO] Using custom API: {API_BASE_URL} with model: {MODEL_NAME}", flush=True)
 
 # ── Environment URL (local or HF Space) ────────────────────────────────────────
 ENV_BASE_URL: str = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
@@ -178,17 +200,97 @@ def get_model_action(client: OpenAI, step: int, obs: Dict, last_reward: float, h
     """Call the LLM and parse its JSON response. Falls back to SUBMIT_TASK on any failure."""
     user_msg = build_user_message(step, obs, last_reward, history)
     try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": user_msg},
-            ],
-            temperature=TEMPERATURE,
-            max_tokens=MAX_TOKENS,
-            stream=False,
-        )
-        text = (completion.choices[0].message.content or "").strip()
+        if USE_HF_INFERENCE:
+            # Use HuggingFace Inference API directly with text-generation endpoint
+            import httpx
+            
+            # Try multiple model endpoints with new HF router
+            models_to_try = [
+                MODEL_NAME,
+                "Qwen/Qwen2.5-Coder-3B-Instruct",
+                "Qwen/Qwen2.5-3B-Instruct", 
+                "mistralai/Mistral-7B-Instruct-v0.2",
+                "HuggingFaceH4/zephyr-7b-beta",
+                "tiiuae/falcon-7b-instruct",
+                "bigscience/bloom-7b1",
+            ]
+            
+            text = None
+            last_error = None
+            
+            for model in models_to_try:
+                try:
+                    print(f"[DEBUG] Trying model: {model}", flush=True)
+                    
+                    # Try new router endpoint first
+                    try:
+                        response = httpx.post(
+                            f"https://api-inference.huggingface.co/models/{model}",
+                            headers={"Authorization": f"Bearer {API_KEY}"},
+                            json={
+                                "inputs": f"{SYSTEM_PROMPT}\n\n{user_msg}",
+                                "parameters": {
+                                    "max_new_tokens": MAX_TOKENS,
+                                    "temperature": TEMPERATURE,
+                                    "return_full_text": False,
+                                }
+                            },
+                            timeout=30,
+                        )
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code == 410:
+                            # Try new router endpoint
+                            print(f"[DEBUG]   Old API deprecated, trying router...", flush=True)
+                            response = httpx.post(
+                                f"https://router.huggingface.co/models/{model}",
+                                headers={"Authorization": f"Bearer {API_KEY}"},
+                                json={
+                                    "inputs": f"{SYSTEM_PROMPT}\n\n{user_msg}",
+                                    "parameters": {
+                                        "max_new_tokens": MAX_TOKENS,
+                                        "temperature": TEMPERATURE,
+                                        "return_full_text": False,
+                                    }
+                                },
+                                timeout=30,
+                            )
+                            response.raise_for_status()
+                        else:
+                            raise
+                    
+                    result = response.json()
+                    
+                    if isinstance(result, list) and len(result) > 0:
+                        text = result[0].get("generated_text", "").strip()
+                    elif isinstance(result, dict) and "generated_text" in result:
+                        text = result["generated_text"].strip()
+                    else:
+                        continue
+                    
+                    if text:
+                        print(f"[DEBUG] Successfully used model: {model}", flush=True)
+                        break
+                except Exception as e:
+                    last_error = e
+                    continue
+            
+            if not text:
+                raise Exception(f"All models failed. Last error: {last_error}")
+        else:
+            # Use OpenAI-compatible API
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": user_msg},
+                ],
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
+                stream=False,
+            )
+            text = (completion.choices[0].message.content or "").strip()
+        
         # Strip accidental markdown fences
         if text.startswith("```"):
             text = text.split("```")[1]
